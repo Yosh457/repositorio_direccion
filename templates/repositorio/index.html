@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-8">
+    <h2 class="text-2xl font-bold text-gray-900">Repositorio Documental</h2>
+    <p class="text-gray-600 mt-1">Selecciona un área para acceder a la documentación oficial.</p>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {% for area in areas %}
+    <a href="{{ url_for('repositorio.ver_area', id=area.id) }}" 
+       class="group block bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-blue-300 transition duration-200 overflow-hidden">
+        
+        <div class="p-6 flex flex-col items-center text-center h-full">
+            <div class="h-16 w-16 bg-blue-50 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-100 transition">
+                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                </svg>
+            </div>
+            
+            <h3 class="text-lg font-semibold text-gray-900 group-hover:text-blue-700 transition">
+                {{ area.nombre }}
+            </h3>
+            
+            {% if area.descripcion %}
+            <p class="text-sm text-gray-500 mt-2 line-clamp-2">
+                {{ area.descripcion }}
+            </p>
+            {% endif %}
+        </div>
+    </a>
+    {% else %}
+        <div class="col-span-3 text-center py-10 text-gray-500">
+            No hay áreas configuradas en el sistema aún.
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}

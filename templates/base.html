@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Repositorio Dirección{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen bg-gray-50">
+
+    {# HEADER (Oculto en login) #}
+    {% if request.endpoint != 'auth.login' %}
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-24 flex justify-between items-center">
+            <div class="flex-shrink-0">
+                <img class="h-16 w-auto" src="{{ url_for('static', filename='img/Logo_Red_APS_2.png') }}" alt="Red APS">
+            </div>
+
+            <div class="hidden md:block text-center">
+                <h1 class="text-xl font-bold text-gray-800">Repositorio Dirección de Salud</h1>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <img class="h-16 w-auto" src="{{ url_for('static', filename='img/logoMaho.png') }}" alt="Muni Alto Hospicio">
+                
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('auth.logout') }}" class="text-sm font-medium text-red-600 hover:text-red-800 border border-red-200 bg-red-50 px-3 py-2 rounded-md transition">
+                    Cerrar Sesión
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+    {% endif %}
+
+    <main class="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {# Mensajes Flash #}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6 space-y-2">
+                {% for category, message in messages %}
+                    <div class="p-4 rounded-md border-l-4 shadow-sm flex justify-between
+                        {% if category == 'success' %} bg-green-50 border-green-500 text-green-700
+                        {% elif category == 'danger' %} bg-red-50 border-red-500 text-red-700
+                        {% else %} bg-blue-50 border-blue-500 text-blue-700 {% endif %}">
+                        <span>{{ message }}</span>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="text-white text-center py-4 text-sm mt-auto" style="background-color: #275c80;">
+        <p>Departamento de Salud - Municipalidad de Alto Hospicio &copy; 2026</p>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
