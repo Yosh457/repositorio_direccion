@@ -24,7 +24,12 @@ def obtener_ruta_redireccion(usuario):
     if not usuario.rol:
         return url_for('auth.login')
     
-    # Ajuste para Repositorio: Admin y Director van al Panel, otros también (por ahora)
+    # LÓGICA CORREGIDA:
+    # Si es Admin, va al Panel de Administración
+    if usuario.rol.nombre == 'Admin':
+        return url_for('admin.panel')
+    
+    # Director, Visualizador (y cualquier otro) van al Repositorio
     return url_for('repositorio.panel')
 
 # --- RUTAS DE AUTENTICACIÓN ---

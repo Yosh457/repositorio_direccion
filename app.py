@@ -6,6 +6,7 @@ from models import db, Usuario
 
 def create_app():
     app = Flask(__name__)
+    app.jinja_env.add_extension('jinja2.ext.do')
     load_dotenv()
 
     # --- CONFIGURACIÓN ---
@@ -33,8 +34,8 @@ def create_app():
     from blueprints.auth import auth_bp
     app.register_blueprint(auth_bp)
 
-    # from blueprints.admin import admin_bp
-    # app.register_blueprint(admin_bp)
+    from blueprints.admin import admin_bp
+    app.register_blueprint(admin_bp)
     
     from blueprints.repositorio import repositorio_bp
     app.register_blueprint(repositorio_bp)

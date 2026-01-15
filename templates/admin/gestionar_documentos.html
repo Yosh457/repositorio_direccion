@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Documentos de {{ area.nombre }}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto my-12 bg-white p-8 rounded-xl shadow-lg">
+    <div class="flex justify-between items-center mb-8 border-b pb-4">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-800">Documentos: <span class="text-blue-600">{{ area.nombre }}</span></h2>
+            <p class="text-gray-500">Gestión de archivos PDF.</p>
+        </div>
+        <a href="{{ url_for('admin.gestion_areas') }}" class="btn btn-secondary">&larr; Volver a Áreas</a>
+    </div>
+
+    <div class="bg-blue-50 p-6 rounded-lg mb-8 border border-blue-100">
+        <h3 class="font-bold text-blue-800 mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            Subir Nuevo PDF
+        </h3>
+        <form method="POST" enctype="multipart/form-data" class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            
+            <div class="md:col-span-3">
+                <label class="block text-xs font-bold text-gray-500 uppercase">Título del Documento</label>
+                <input type="text" name="titulo" class="w-full px-4 py-2 border rounded-lg bg-white" required placeholder="Ej: Informe Trimestral">
+            </div>
+
+            <div class="md:col-span-1">
+                <label class="block text-xs font-bold text-gray-500 uppercase">Versión</label>
+                <input type="text" name="version" class="w-full px-4 py-2 border rounded-lg bg-white" placeholder="1.0">
+            </div>
+            
+            <div class="md:col-span-4">
+                <label class="block text-xs font-bold text-gray-500 uppercase">Archivo (PDF)</label>
+                <input type="file" name="archivo" accept=".pdf" class="w-full px-4 py-2 border rounded-lg bg-white" required>
+            </div>
+
+            <div class="md:col-span-2">
+                <label class="block text-xs font-bold text-gray-500 uppercase">Descripción</label>
+                <input type="text" name="descripcion" class="w-full px-4 py-2 border rounded-lg bg-white" placeholder="Opcional">
+            </div>
+
+            <div class="md:col-span-2">
+                <button type="submit" class="w-full btn btn-primary">Subir</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="min-w-full bg-white border rounded-lg overflow-hidden">
+            <thead class="bg-gray-100">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Título / Versión</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Archivo</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tamaño</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                {% for doc in area.documentos %}
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="font-bold text-gray-900 flex items-center gap-2">
+                            {{ doc.titulo }}
+                            {% if doc.version %}
+                                <span class="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded border border-gray-300 font-mono">v{{ doc.version }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-sm text-gray-500">{{ doc.descripcion or '' }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {{ doc.filename }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {{ (doc.size_bytes / 1024 / 1024)|round(2) }} MB
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {{ doc.fecha_subida.strftime('%d-%m-%Y') }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <form action="{{ url_for('admin.eliminar_documento', id=doc.id) }}" method="POST" onsubmit="return confirm('¿Borrar definitivamente este documento?');" class="inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <button type="submit" class="text-red-600 hover:text-red-900 font-bold">Eliminar</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="px-6 py-10 text-center text-gray-500 italic">No hay documentos en esta área.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

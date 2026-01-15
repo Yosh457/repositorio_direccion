@@ -68,6 +68,7 @@ class Documento(db.Model):
     __tablename__ = 'documentos'
     id = db.Column(db.Integer, primary_key=True)
     titulo = db.Column(db.String(200), nullable=False)
+    version = db.Column(db.String(50), nullable=True)
     descripcion = db.Column(db.Text, nullable=True)
     
     filename = db.Column(db.String(255), nullable=False)
