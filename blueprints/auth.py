@@ -1,35 +1,25 @@
 # blueprints/auth.py
-from flask import Blueprint, render_template, redirect, url_for, flash, request
-from flask_login import login_user, logout_user, login_required, current_user
+import secrets
 from datetime import datetime, timedelta
 import pytz
-import secrets
-import re
+from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask_login import login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash
 
-from models import db, Usuario
-from utils import registrar_log, enviar_correo_reseteo
+# Importamos modelos (Global y Local)
+from models import db, Usuario, Rol, UsuarioGlobal
+from utils import registrar_log, enviar_correo_reseteo, es_password_segura
 
-# Definimos el Blueprint
 auth_bp = Blueprint('auth', __name__, template_folder='../templates')
 
-# --- VALIDACIONES LOCALES ---
-def es_password_segura(password):
-    if len(password) < 8: return False
-    if not re.search(r"[A-Z]", password): return False
-    if not re.search(r"[0-9]", password): return False
-    return True
-
 def obtener_ruta_redireccion(usuario):
-    """Define a dónde va el usuario después de loguearse según su Rol."""
     if not usuario.rol:
         return url_for('auth.login')
     
-    # LÓGICA CORREGIDA:
-    # Si es Admin, va al Panel de Administración
     if usuario.rol.nombre == 'Admin':
         return url_for('admin.panel')
     
-    # Director, Visualizador (y cualquier otro) van al Repositorio
+    # Director y Visualizador van al Repositorio
     return url_for('repositorio.panel')
 
 # --- RUTAS DE AUTENTICACIÓN ---
@@ -43,31 +33,36 @@ def login():
         email = request.form.get('email')
         password = request.form.get('password')
         
-        usuario = Usuario.query.filter_by(email=email).first()
+        # 1. BUSCAR EN LA BD GLOBAL (Autenticación)
+        identidad_global = UsuarioGlobal.query.filter_by(email=email).first()
 
-        if usuario:
-            if not usuario.activo:
-                flash('Tu cuenta está desactivada. Contacta al administrador.', 'danger')
-                return redirect(url_for('auth.login'))
+        if identidad_global and identidad_global.check_password(password):
+            # 2. BUSCAR EN BD LOCAL (Autorización)
+            usuario_local = Usuario.query.filter_by(usuario_global_id=identidad_global.id).first()
             
-            if usuario.check_password(password):
-                login_user(usuario)
-                registrar_log("Inicio de Sesión", f"Usuario {usuario.nombre_completo} accedió.")
+            if usuario_local and usuario_local.activo and identidad_global.activo:
+                login_user(usuario_local)
+                
+                # Usamos el nombre del proxy
+                registrar_log("Inicio de Sesión", f"Usuario {usuario_local.nombre_completo} inició sesión.")
 
-                if usuario.cambio_clave_requerido:
+                if identidad_global.cambio_clave_requerido:
+                    flash('Por seguridad, debes cambiar tu contraseña ahora.', 'warning')
                     return redirect(url_for('auth.cambiar_clave'))
                 
-                flash(f'Bienvenido, {usuario.nombre_completo}', 'success')
-                return redirect(obtener_ruta_redireccion(usuario))
-        
-        flash('Correo o contraseña incorrectos.', 'danger')
+                flash(f'Bienvenido, {usuario_local.nombre_completo}', 'success')
+                return redirect(obtener_ruta_redireccion(usuario_local))
+            else:
+                flash('Credenciales correctas, pero no tienes permisos para este sistema.', 'warning')
+        else:
+            flash('Correo o contraseña incorrectos.', 'danger')
     
     return render_template('auth/login.html')
 
 @auth_bp.route('/logout')
 @login_required
 def logout():
-    registrar_log("Cierre de Sesión", "Usuario salió del sistema.")
+    registrar_log("Cierre de Sesión", f"Usuario {current_user.nombre_completo} cerró sesión.")
     logout_user()
     flash('Has cerrado sesión correctamente.', 'success')
     return redirect(url_for('auth.login'))
@@ -75,48 +70,54 @@ def logout():
 @auth_bp.route('/cambiar_clave', methods=['GET', 'POST'])
 @login_required
 def cambiar_clave():
-    if not current_user.cambio_clave_requerido:
-        return redirect(obtener_ruta_redireccion(current_user))
-        
+    # ... Lógica Global Idéntica a Inventario ...
     if request.method == 'POST':
-        nueva_password = request.form.get('nueva_password')
+        password_nueva = request.form.get('nueva_password')
+        password_confirmar = request.form.get('confirmar_password')
 
-        if not es_password_segura(nueva_password):
-            flash('Error: La contraseña debe tener 8 caracteres, mayúscula y número.', 'danger')
-        else:
-            current_user.set_password(nueva_password)
-            current_user.cambio_clave_requerido = False
+        if password_nueva != password_confirmar:
+            flash('Las nuevas contraseñas no coinciden.', 'warning')
+            return render_template('auth/cambiar_clave.html')
+
+        if not es_password_segura(password_nueva):
+            flash('La contraseña no cumple los requisitos de seguridad.', 'warning')
+            return render_template('auth/cambiar_clave.html')
+
+        try:
+            usuario_global = current_user.identidad
+            usuario_global.password_hash = generate_password_hash(password_nueva)
+            usuario_global.cambio_clave_requerido = False 
             db.session.commit()
             
-            registrar_log("Cambio de Clave", "Usuario actualizó su contraseña obligatoria.")
+            registrar_log("Cambio de Clave", f"Usuario {current_user.nombre_completo} cambió su clave.")
             logout_user()
-            flash('Contraseña actualizada. Ingresa nuevamente.', 'success')
+            flash('Contraseña actualizada. Inicia sesión de nuevo.', 'success')
             return redirect(url_for('auth.login'))
             
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error: {e}")
+            flash('Ocurrió un error al actualizar.', 'danger')
+
     return render_template('auth/cambiar_clave.html')
 
 @auth_bp.route('/solicitar-reseteo', methods=['GET', 'POST'])
 def solicitar_reseteo():
-    if current_user.is_authenticated:
-        return redirect(obtener_ruta_redireccion(current_user))
-
+    # ... Lógica Global Idéntica a Inventario ...
     if request.method == 'POST':
         email = request.form.get('email')
-        usuario = Usuario.query.filter_by(email=email).first()
+        usuario_global = UsuarioGlobal.query.filter_by(email=email).first()
         
-        if usuario:
+        if usuario_global:
             token = secrets.token_hex(16)
-            cl_tz = pytz.timezone('America/Santiago')
-            expiracion = datetime.now(cl_tz).replace(tzinfo=None) + timedelta(hours=1)
-            
-            usuario.reset_token = token
-            usuario.reset_token_expiracion = expiracion
+            usuario_global.reset_token = token
+            usuario_global.reset_token_expiracion = datetime.now() + timedelta(hours=1)
             db.session.commit()
             
-            enviar_correo_reseteo(usuario, token)
+            enviar_correo_reseteo(usuario_global, token)
             flash(f'Se ha enviado un enlace a {email}.', 'success')
         else:
-            flash(f'El correo {email} no está registrado.', 'danger')
+            flash(f'El correo {email} no se encuentra registrado.', 'danger')
             
         return redirect(url_for('auth.login'))
         
@@ -124,30 +125,40 @@ def solicitar_reseteo():
 
 @auth_bp.route('/resetear-clave/<token>', methods=['GET', 'POST'])
 def resetear_clave(token):
+    # ... Lógica Global Idéntica a Inventario ...
     if current_user.is_authenticated:
         return redirect(obtener_ruta_redireccion(current_user))
 
-    usuario = Usuario.query.filter_by(reset_token=token).first()
-    cl_tz = pytz.timezone('America/Santiago')
-    ahora = datetime.now(cl_tz).replace(tzinfo=None)
+    usuario_global = UsuarioGlobal.query.filter_by(reset_token=token).first()
     
-    if not usuario or not usuario.reset_token_expiracion or usuario.reset_token_expiracion < ahora:
+    if not usuario_global or not usuario_global.reset_token_expiracion or usuario_global.reset_token_expiracion < datetime.now():
         flash('El enlace es inválido o ha expirado.', 'danger')
         return redirect(url_for('auth.solicitar_reseteo'))
         
     if request.method == 'POST':
         nueva_password = request.form.get('nueva_password')
+        confirmar = request.form.get('confirmar_password')
+
+        if nueva_password != confirmar:
+             flash('Las contraseñas no coinciden.', 'warning')
+             return render_template('auth/resetear_clave.html', token=token)
 
         if not es_password_segura(nueva_password):
-            flash('Error: Requisitos de seguridad no cumplidos.', 'danger')
-        else:
-            usuario.set_password(nueva_password)
-            usuario.reset_token = None
-            usuario.reset_token_expiracion = None
+            flash('La contraseña no cumple los requisitos.', 'danger')
+            return render_template('auth/resetear_clave.html', token=token)
+        
+        try:
+            usuario_global.password_hash = generate_password_hash(nueva_password)
+            usuario_global.reset_token = None
+            usuario_global.reset_token_expiracion = None
+            usuario_global.cambio_clave_requerido = False
             db.session.commit()
             
-            registrar_log("Recuperación Clave", f"Usuario {usuario.email} recuperó su clave.")
-            flash('Tu contraseña ha sido restablecida. Inicia sesión.', 'success')
+            flash('Tu contraseña ha sido restablecida.', 'success')
             return redirect(url_for('auth.login'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash('Error al restablecer contraseña.', 'danger')
         
     return render_template('auth/resetear_clave.html')

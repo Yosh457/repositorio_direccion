@@ -6,7 +6,7 @@ from werkzeug.utils import secure_filename
 import hashlib
 
 # Modelos
-from models import db, Usuario, Rol, Log, AreaDocumento, Documento
+from models import db, Usuario, Rol, Log, UsuarioGlobal, AreaDocumento, Documento
 # Utilidades
 from utils import registrar_log, admin_required
 
@@ -21,18 +21,20 @@ admin_bp = Blueprint('admin', __name__, template_folder='../templates', url_pref
 @login_required
 @admin_required
 def panel():
-    # --- Lógica de Paginación y Filtros de Usuarios (Tu estándar) ---
     page = request.args.get('page', 1, type=int)
     busqueda = request.args.get('busqueda', '')
     rol_filtro = request.args.get('rol_filtro', '')
     estado_filtro = request.args.get('estado_filtro', '')
 
-    query = Usuario.query
+    # JOIN CON GLOBAL PARA BÚSQUEDA
+    query = Usuario.query.join(Usuario.identidad)
 
     if busqueda:
         query = query.filter(
-            or_(Usuario.nombre_completo.ilike(f'%{busqueda}%'),
-                Usuario.email.ilike(f'%{busqueda}%'))
+            or_(
+                UsuarioGlobal.nombre_completo.ilike(f'%{busqueda}%'),
+                UsuarioGlobal.email.ilike(f'%{busqueda}%')
+            )
         )
     
     if rol_filtro:
@@ -43,7 +45,7 @@ def panel():
     elif estado_filtro == 'inactivo':
         query = query.filter(Usuario.activo == False)
     
-    pagination = query.order_by(Usuario.id).paginate(page=page, per_page=10, error_out=False)
+    pagination = query.order_by(UsuarioGlobal.nombre_completo).paginate(page=page, per_page=10, error_out=False)
     roles_para_filtro = Rol.query.order_by(Rol.nombre).all()
 
     return render_template('admin/panel.html', 
@@ -53,6 +55,7 @@ def panel():
                            rol_filtro=rol_filtro,
                            estado_filtro=estado_filtro)
 
+# --- VINCULAR USUARIO (NUEVA LÓGICA) ---
 @admin_bp.route('/crear_usuario', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -60,76 +63,80 @@ def crear_usuario():
     roles = Rol.query.order_by(Rol.nombre).all()
 
     if request.method == 'POST':
-        nombre = request.form.get('nombre_completo')
-        email = request.form.get('email')
-        password = request.form.get('password')
+        usuario_global_id = request.form.get('usuario_global_id')
         rol_id = request.form.get('rol_id')
-        forzar_cambio = request.form.get('forzar_cambio_clave') == '1'
 
-        if Usuario.query.filter_by(email=email).first():
-            flash('Error: El correo ya está registrado.', 'danger')
-            return render_template('admin/crear_usuario.html', roles=roles, datos_previos=request.form)
+        if not usuario_global_id or not rol_id:
+            flash('Debes seleccionar un funcionario y un rol.', 'danger')
+            return redirect(url_for('admin.crear_usuario'))
 
-        nuevo_usuario = Usuario(
-            nombre_completo=nombre, email=email, rol_id=rol_id,
-            cambio_clave_requerido=forzar_cambio, activo=True
+        if Usuario.query.filter_by(usuario_global_id=usuario_global_id).first():
+            flash('Este funcionario ya tiene acceso.', 'warning')
+            return redirect(url_for('admin.crear_usuario'))
+
+        nuevo_usuario_local = Usuario(
+            usuario_global_id=usuario_global_id,
+            rol_id=rol_id,
+            activo=True
         )
-        nuevo_usuario.set_password(password)
         
         try:
-            db.session.add(nuevo_usuario)
+            db.session.add(nuevo_usuario_local)
             db.session.commit()
-            registrar_log("Creación Usuario", f"Admin creó a {nombre} ({email})")
-            flash('Usuario creado con éxito.', 'success')
+            
+            usr_glob = UsuarioGlobal.query.get(usuario_global_id)
+            nombre_log = usr_glob.nombre_completo if usr_glob else "ID " + str(usuario_global_id)
+            
+            registrar_log("Vinculación Usuario", f"Admin otorgó acceso a {nombre_log}")
+            flash('Funcionario vinculado exitosamente.', 'success')
             return redirect(url_for('admin.panel'))
+            
         except Exception as e:
             db.session.rollback()
-            flash(f'Error al crear usuario: {str(e)}', 'danger')
+            flash(f'Error al vincular: {str(e)}', 'danger')
 
-    return render_template('admin/crear_usuario.html', roles=roles)
+    # Buscar usuarios globales disponibles (que no estén vinculados)
+    ids_locales = db.session.query(Usuario.usuario_global_id).all()
+    ids_locales_lista = [id[0] for id in ids_locales]
 
+    if ids_locales_lista:
+        usuarios_disponibles = UsuarioGlobal.query.filter(
+            UsuarioGlobal.id.notin_(ids_locales_lista),
+            UsuarioGlobal.activo == True
+        ).order_by(UsuarioGlobal.nombre_completo).all()
+    else:
+        usuarios_disponibles = UsuarioGlobal.query.filter_by(activo=True).order_by(UsuarioGlobal.nombre_completo).all()
+
+    return render_template('admin/crear_usuario.html', roles=roles, usuarios_disponibles=usuarios_disponibles)
+
+# --- EDITAR PERMISOS ---
 @admin_bp.route('/editar_usuario/<int:id>', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def editar_usuario(id):
-    usuario = Usuario.query.get_or_404(id)
+    usuario_local = Usuario.query.get_or_404(id)
     roles = Rol.query.order_by(Rol.nombre).all()
 
     if request.method == 'POST':
-        email_nuevo = request.form.get('email')
-        usuario_existente = Usuario.query.filter_by(email=email_nuevo).first()
-        if usuario_existente and usuario_existente.id != id:
-            flash('Error: Ese correo ya pertenece a otro usuario.', 'danger')
-            return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles)
-
-        usuario.nombre_completo = request.form.get('nombre_completo')
-        usuario.email = email_nuevo
-        usuario.rol_id = request.form.get('rol_id')
-        usuario.cambio_clave_requerido = request.form.get('forzar_cambio_clave') == '1'
-
-        password = request.form.get('password')
-        if password and password.strip():
-            usuario.set_password(password)
-            flash('Contraseña actualizada.', 'info')
-
-        try:
+        # Solo editamos Rol localmente
+        nuevo_rol_id = request.form.get('rol_id')
+        if nuevo_rol_id:
+            usuario_local.rol_id = nuevo_rol_id
             db.session.commit()
-            registrar_log("Edición Usuario", f"Admin editó a {usuario.nombre_completo}")
-            flash('Usuario actualizado con éxito.', 'success')
+            registrar_log("Edición Permisos", f"Admin cambió rol de {usuario_local.nombre_completo}")
+            flash('Permisos actualizados.', 'success')
             return redirect(url_for('admin.panel'))
-        except Exception as e:
-            db.session.rollback()
-            flash(f'Error al actualizar: {str(e)}', 'danger')
 
-    return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles)
+    return render_template('admin/editar_usuario.html', usuario=usuario_local, roles=roles)
 
+# --- TOGGLE ACTIVO ---
 @admin_bp.route('/toggle_activo/<int:id>', methods=['POST'])
 @login_required
 @admin_required
 def toggle_activo(id):
     usuario = Usuario.query.get_or_404(id)
     if usuario.id == current_user.id:
-        flash('No puedes desactivar tu propia cuenta.', 'danger')
+        flash('No puedes desactivarte a ti mismo.', 'danger')
         return redirect(url_for('admin.panel'))
         
     usuario.activo = not usuario.activo
