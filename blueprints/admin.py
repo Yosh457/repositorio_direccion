@@ -275,3 +275,58 @@ def eliminar_documento(id):
     registrar_log("Gestión Documental", f"Documento eliminado: {titulo}")
     flash('Documento eliminado correctamente.', 'success')
     return redirect(url_for('admin.gestionar_documentos', id=area_id))
+
+@admin_bp.route('/area/editar/<int:id>', methods=['POST'])
+@login_required
+@admin_required
+def editar_area(id):
+    area = AreaDocumento.query.get_or_404(id)
+    nombre = request.form.get('nombre')
+    
+    if nombre:
+        area.nombre = nombre
+        area.descripcion = request.form.get('descripcion')
+        db.session.commit()
+        registrar_log("Gestión Documental", f"Área editada: {nombre}")
+        flash('Área actualizada correctamente.', 'success')
+    else:
+        flash('El nombre no puede estar vacío.', 'warning')
+        
+    return redirect(url_for('admin.gestion_areas'))
+
+@admin_bp.route('/documento/editar/<int:id>', methods=['POST'])
+@login_required
+@admin_required
+def editar_documento(id):
+    doc = Documento.query.get_or_404(id)
+    titulo = request.form.get('titulo')
+    
+    if titulo:
+        doc.titulo = titulo
+        doc.version = request.form.get('version')
+        doc.descripcion = request.form.get('descripcion')
+        
+        # Verificar si subieron un archivo nuevo para reemplazar el anterior
+        archivo = request.files.get('archivo')
+        if archivo and archivo.filename != '':
+            if archivo.filename.lower().endswith('.pdf'):
+                try:
+                    data = archivo.read()
+                    doc.filename = secure_filename(archivo.filename)
+                    doc.archivo_data = data
+                    doc.size_bytes = len(data)
+                    doc.sha256 = hashlib.sha256(data).hexdigest()
+                    flash('Documento y archivo actualizados.', 'success')
+                except Exception as e:
+                    flash(f'Error al procesar el nuevo archivo: {e}', 'danger')
+            else:
+                flash('El archivo nuevo debe ser PDF. Se actualizaron solo los textos.', 'warning')
+        else:
+            flash('Datos del documento actualizados (archivo mantenido).', 'success')
+
+        db.session.commit()
+        registrar_log("Gestión Documental", f"Documento editado: {titulo}")
+    else:
+        flash('El título es obligatorio.', 'warning')
+        
+    return redirect(url_for('admin.gestionar_documentos', id=doc.area_id))
