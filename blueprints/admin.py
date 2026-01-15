@@ -162,9 +162,9 @@ def ver_logs():
         query = query.filter(Log.accion == accion_filtro)
 
     pagination = query.paginate(page=page, per_page=15, error_out=False)
-    todos_los_usuarios = Usuario.query.order_by(Usuario.nombre_completo).all()
-    acciones_posibles = ["Inicio de Sesión", "Cierre de Sesión", "Creación Usuario", 
-                         "Edición Usuario", "Cambio Estado", "Cambio de Clave", 
+    todos_los_usuarios = Usuario.query.join(Usuario.identidad).order_by(UsuarioGlobal.nombre_completo).all()
+    acciones_posibles = ["Inicio de Sesión", "Cierre de Sesión", "Vinculación Usuario", 
+                         "Edición Permisos", "Cambio Estado", "Cambio de Clave", 
                          "Recuperación Clave", "Gestión Documental"]
 
     return render_template('admin/ver_logs.html', pagination=pagination,

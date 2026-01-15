@@ -1,9 +1,10 @@
-from flask import Blueprint, render_template, send_file, abort
-from flask_login import login_required
-from models import AreaDocumento, Documento
-from io import BytesIO
+# blueprints/repositorio.py
+from flask import Blueprint, render_template, make_response, abort
+from flask_login import login_required, current_user
+from models import AreaDocumento, Documento, db
 
-repositorio_bp = Blueprint('repositorio', __name__, template_folder='../templates')
+# Definimos el Blueprint
+repositorio_bp = Blueprint('repositorio', __name__, template_folder='../templates', url_prefix='/repositorio')
 
 @repositorio_bp.route('/panel')
 @login_required
@@ -19,34 +20,36 @@ def ver_area(id):
     area = AreaDocumento.query.get_or_404(id)
     return render_template('repositorio/ver_area.html', area=area)
 
-@repositorio_bp.route('/documento/<int:id>/ver')
+# --- VISUALIZAR PDF (SOLUCIÓN BLINDADA CPANEL) ---
+@repositorio_bp.route('/ver_pdf/<int:id>')
 @login_required
 def ver_pdf(id):
-    """Streaming del BLOB al navegador"""
     doc = Documento.query.get_or_404(id)
     
-    # Validamos que exista data binaria
     if not doc.archivo_data:
-        abort(404)
-        
-    return send_file(
-        BytesIO(doc.archivo_data),
-        mimetype=doc.mimetype,
-        as_attachment=False, 
-        download_name=doc.filename
-    )
+        abort(404, description="El archivo no tiene contenido.")
 
-@repositorio_bp.route('/documento/<int:id>/descargar')
+    # Usamos make_response en lugar de send_file para evitar error 'fileno' en Passenger
+    response = make_response(doc.archivo_data)
+    response.headers['Content-Type'] = doc.mimetype
+    # 'inline' hace que el navegador intente abrirlo ahí mismo (Vista Previa)
+    response.headers['Content-Disposition'] = f'inline; filename="{doc.filename}"'
+    
+    return response
+
+# --- DESCARGAR PDF (SOLUCIÓN BLINDADA CPANEL) ---
+@repositorio_bp.route('/descargar_pdf/<int:id>')
 @login_required
 def descargar_pdf(id):
-    """Descarga forzada del BLOB"""
     doc = Documento.query.get_or_404(id)
+    
     if not doc.archivo_data:
-        abort(404)
+        abort(404, description="El archivo no tiene contenido.")
 
-    return send_file(
-        BytesIO(doc.archivo_data),
-        mimetype=doc.mimetype,
-        as_attachment=True,
-        download_name=doc.filename
-    )
+    # Usamos make_response para forzar la descarga sin usar disco
+    response = make_response(doc.archivo_data)
+    response.headers['Content-Type'] = doc.mimetype
+    # 'attachment' fuerza la descarga automática
+    response.headers['Content-Disposition'] = f'attachment; filename="{doc.filename}"'
+    
+    return response
